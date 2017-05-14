@@ -27,6 +27,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Listener for changes in Firebase database
+     */
     inner class LightChangeListener : ValueEventListener {
         override fun onCancelled(p0: DatabaseError?) {
            Log.d("Error onCancelled: ", p0.toString())
