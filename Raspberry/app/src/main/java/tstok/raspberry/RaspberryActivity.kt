@@ -3,7 +3,6 @@ package tstok.raspberry
 import android.os.Bundle
 import android.support.v7.app.AppCompatActivity
 import android.util.Log
-import android.view.View
 import android.widget.TextView
 import com.google.android.things.pio.Gpio
 import com.google.android.things.pio.GpioCallback
@@ -16,96 +15,86 @@ import com.google.firebase.database.ValueEventListener
 
 class RaspberryActivity : AppCompatActivity() {
 
-    var greenGpio: Gpio? = null
-    var greenButton: Gpio? = null
     val database: FirebaseDatabase = FirebaseDatabase.getInstance()
+    lateinit var greenGpio: Gpio
+    lateinit var greenButton: Gpio
 
     override fun onCreate(savedInstanceState: Bundle?) {
         setContentView(R.layout.demo_activity)
-        checkIOPorts()
+        displayIOPorts()
 
         val manager = PeripheralManagerService()
-        greenGpio = manager.openGpio(GREEN_PIN)
+        greenGpio = manager.openGpio(GREEN_LED_PIN)
         greenButton = manager.openGpio(GREEN_BUTTON_PIN)
 
-        // direct out for lights (digital write)
-        greenGpio?.setDirection(Gpio.DIRECTION_OUT_INITIALLY_LOW)
+        // direction out for lights (digital write)
+        greenGpio.setDirection(Gpio.DIRECTION_OUT_INITIALLY_LOW)
 
         // direction in for buttons (digital read)
-        setupOutput(greenButton, GREEN)
+        greenGpio.setDirection(Gpio.DIRECTION_IN)
+        greenGpio.setActiveType(Gpio.ACTIVE_LOW)
+        greenGpio.setEdgeTriggerType(Gpio.EDGE_RISING)
+        greenGpio.registerGpioCallback(DemoCallback())
 
-        // no analog read?!? smh
-
+        // listener for when UI element is clicked, changes LED state on click
         findViewById(R.id.green_button).setOnClickListener {
-            greenGpio?.run {
-                greenGpio!!.value = !greenGpio!!.value
-                updateFirebase(GREEN, greenGpio!!.value)
-            }
+            greenGpio.value = !greenGpio.value
+            updateFirebase()
         }
 
-        database.getReference(GREEN).addValueEventListener(Listener(GREEN))
+        database.getReference(GREEN).addValueEventListener(LightChangeListener())
 
         super.onCreate(savedInstanceState)
     }
 
-    fun setupOutput(gpio: Gpio?, color: String) {
-        gpio?.setDirection(Gpio.DIRECTION_IN)
-        gpio?.setActiveType(Gpio.ACTIVE_LOW)
-        gpio?.setEdgeTriggerType(Gpio.EDGE_RISING)
-        gpio?.registerGpioCallback(DemoCallback(color))
-    }
-
     override fun onDestroy() {
         super.onDestroy()
-        greenGpio?.close()
-        greenGpio = null
+        greenGpio.close()
     }
 
-    fun updateFirebase(color: String, value: Boolean) = database.getReference(color).setValue(value)
+    fun updateFirebase() = database.getReference(GREEN).setValue(greenGpio.value)
 
-
-    fun checkIOPorts() {
-
+    /**
+     *  Displays available IO ports at the top of the screen
+     */
+    fun displayIOPorts() {
         (findViewById(R.id.demo_text) as TextView).text = "List of GPIO "
         val manager = PeripheralManagerService()
         val ports = manager.gpioList
 
         var portsString = ""
-        for (port in ports) {
-            portsString += port.toString() + " "
-        }
+        ports.forEach { portsString += it.toString() + " " }
 
         (findViewById(R.id.demo_text2) as TextView).text = portsString
     }
 
-    open inner class DemoCallback(val color: String) : GpioCallback() {
+    /**
+     * Listener for changes in button state. When button clicked, inverts the value of the LED
+     */
+    open inner class DemoCallback : GpioCallback() {
         override fun onGpioEdge(gpio: Gpio?): Boolean {
-            when (color) {
-                GREEN -> greenGpio?.value = !greenGpio!!.value
-            }
-
-            greenGpio?.run { updateFirebase(color, greenGpio!!.value) }
-
+            greenGpio.value = !greenGpio.value
+            updateFirebase()
             return true
         }
     }
 
-    inner class Listener(val color: String) : ValueEventListener {
+    /**
+     * Listener for changes in Firebase database
+     */
+    inner class LightChangeListener : ValueEventListener {
         override fun onCancelled(p0: DatabaseError?) {
-            Log.d("Error with color $color", p0.toString())
+            Log.d("Error onCancelled: ", p0.toString())
         }
 
         override fun onDataChange(dataSnapshot: DataSnapshot?) {
-
-            when (color){
-                GREEN -> greenGpio?.value = dataSnapshot?.getValue(Boolean::class.java).isTrue()
-            }
+            greenGpio.value = dataSnapshot?.getValue(Boolean::class.java).isTrue()
         }
     }
 
     companion object {
 
-        const val GREEN_PIN = "BCM12"
+        const val GREEN_LED_PIN = "BCM12"
         const val GREEN_BUTTON_PIN = "BCM20"
         const val GREEN = "green"
     }
